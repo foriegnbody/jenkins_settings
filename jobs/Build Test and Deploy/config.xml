@@ -1,0 +1,79 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@2.12.2">
+  <actions>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.2.7"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.2.7">
+      <jobProperties/>
+      <triggers/>
+      <parameters/>
+    </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
+  </actions>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+      <triggers>
+        <hudson.triggers.SCMTrigger>
+          <spec>H/5 *  * * *</spec>
+          <ignorePostCommitHooks>false</ignorePostCommitHooks>
+        </hudson.triggers.SCMTrigger>
+      </triggers>
+    </org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.45">
+    <script>pipeline {
+agent any
+   stages {
+   stage(&apos;Source&apos;) {
+       steps {
+      git url:  &apos;https://github.com/foriegnbody/demo.git&apos;
+       }
+
+   }
+   stage(&apos;Build&apos;) {
+       steps {
+       dir(&apos;gradle&apos;) {
+       sh &apos;pwd&apos;
+       sh &apos;chmod 755 ecobolbin/bin/linux/x86_64/ecobol&apos;
+       sh &apos;./gradlew build -PpassedVersion=1.1.0 -b build.gradle&apos;
+       }}
+   }
+
+   stage(&quot;SonarQube Analysis&quot;) {
+
+        steps {
+            withSonarQubeEnv(&apos;localhost SonarQube Server&apos;) {
+                dir(&apos;gradle&apos;) {
+                sh &apos;pwd&apos;
+                sh &apos;./gradlew --info sonarqube -PpassedVersion=1.1.0 -Dsonar.host.url=http://tpccsonar.westus.cloudapp.azure.com:9000  -Dsonar.login=8c5abd548542f013061d4a1789f2ee0e42aa5dbc -Dsonar.sources=sources -b build.gradle&apos;
+                }
+            }
+            script {
+            def qualitygate = waitForQualityGate()
+            if (qualitygate.status != &quot;OK&quot; &amp;&amp; qualitygate.status != &quot;WARN&quot;) {
+                error &quot;Pipeline aborted due to quality gate coverage failure: ${qualitygate.status}&quot;
+            }
+            if (qualitygate.status == &quot;WARN&quot;) {
+                currentBuild.result = &quot;UNSTABLE&quot;
+            }
+            
+        }
+        }
+    }
+
+    stage(&apos;Deploy&apos;) {
+       steps {
+       dir(&apos;gradle&apos;) {
+       sh &apos;pwd&apos;
+       sh &apos;chmod 755 ecobolbin/bin/linux/x86_64/ecobol&apos;
+       sh &apos;./gradlew cargoRedeployRemote --stacktrace -PpassedVersion=1.1.0 -b build.gradle&apos;
+       }}
+   }
+   }
+}</script>
+    <sandbox>false</sandbox>
+  </definition>
+  <triggers/>
+  <authToken>GITHUB</authToken>
+  <disabled>false</disabled>
+</flow-definition>
